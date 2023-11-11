@@ -1,47 +1,37 @@
-name: Check Pod status
-
 on: workflow_dispatch
 
 jobs:
   check-pods:
     runs-on: ubuntu-latest
+
     steps:
-    - name: Check SSH_PKEY Secret
+    - name: Connect to K3s host
       run: |
-        echo "Secret SSH_PKEY: ${{ secrets.SSH_PKEY }}"
-        echo "${{ secrets.SSH_PKEY }}" > secret.key.pem
-        chmod 600 secret.key.pem
-        ssh-keygen -l -f secret.key.pem
-      continue-on-error: true
-    
-    - name: Connect to Kubernetes host
-      run: |
-        set -x
         mkdir ~/.ssh
         eval `ssh-agent -s`
-        ssh-add - <<< "${{ secrets.SSH_PKEY }}" 
-        ssh-keyscan -p 32510 ${{ secrets.BASTION_IP_JUMP }} >> ~/.ssh/known_hosts
-        ssh ${{ secrets.BASTION_USER_JUMP }}@${{ secrets.BASTION_IP_JUMP }} -p 32510 ssh-keyscan ${{ secrets.VHOST_IP }} >> ~/.ssh/known_hosts
-        ssh -o ProxyCommand="ssh -W %h:%p ${{ secrets.BASTION_USER_JUMP }}@${{ secrets.BASTION_IP_JUMP }} -p 32510" ${{ secrets.VHOST_USER }}@${{ secrets.VHOST_IP }} "kubectl get pods -A" >> output-pods.log
+        ssh-add - <<< "${{ secrets.SSH_KEY }}"
+        ssh-keyscan -p 32510 ${{ secrets.JUMP_HOST }} >> ~/.ssh/known_hosts
+        ssh ${{ secrets.JUMP_USERNAME }}@${{ secrets.JUMP_HOST }} -p 32510 ssh-keyscan ${{ secrets.HOST_IP }} >> ~/.ssh/known_hosts
+        ssh -o ProxyCommand="ssh -W %h:%p ${{ secrets.JUMP_USERNAME }}@${{ secrets.JUMP_HOST }} -p 32510" ${{ secrets.HOST_USER }}@${{ secrets.HOST_IP }} "kubectl get pods -A" >> init_pods.log
 
-    - name: Check Crash pods
-      id: check-pods
-      run: |
-        echo "steps.p_c.outputs.output_log" > output.log
-        echo "pods-failed=$(cat output.log | grep -v 'Running\|Completed ' | wc -l)" >> $GITHUB_OUTPUT
-    - name: Upload Crashed Pods List
-      if: steps.check-pods.outputs.pods-failed == 1
+    - name: Get status pods
+      id: status-pods
+      run:
+         echo "pods-crashed=$(cat init_pods.log | grep -v 'Running\|Completed ' | wc -l)"
+         echo "pods-crashed=$pods_crashed"
+
+    - name: Uplod status pods
+      if: steps.check-pods.outputs.pods-crashed != 1
       uses: actions/upload-artifact@v3
       with:
-        path: output.log
+        name: Status Pods
+        path: init_pods.log
 
-    - name: Slack notification
+    - name: Notify Slack on failure
+      if: steps.check-pods.outputs.pods-crashed != 1
       uses: rtCamp/action-slack-notify@v2
-      if: steps.check-pods.outputs.pods-failed == 1
       env:
-        SLACK_CHANNEL: 'general'
-        SLACK_ICON: https://github.com/rtCamp.png?size=48
-        SLACK_COLOR: ${{ job.status }}
-        SLACK_USERNAME: rtBot
-        SLACK_TITLE: "Failed Pods Alert"
-        SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_COLOR: 'red'
+          SLACK_CHANNEL: test
+          SLACK_MESSAGE: "WARNING! Pods crashed or Unruning!"

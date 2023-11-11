@@ -1,10 +1,6 @@
 name: Check Pod status
 
-
-
 on: workflow_dispatch
-
-
 
 jobs:
   check-pods:
@@ -28,11 +24,6 @@ jobs:
           kubectl get pods -A >> output.log
           echo "::set-output name=output_log::$(cat output.log)"
 
-    - name: Check Crash pods
-      id: check-pods
-      run: |
-        echo "steps.p_c.outputs.output_log" > output.log
-        echo "pods-failed=$(cat output.log | grep -v 'Running\|Completed ' | wc -l)" >> $GITHUB_OUTPUT
     - name: Check Crash pods
       id: check-pods
       run: |

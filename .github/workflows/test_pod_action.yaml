@@ -6,23 +6,15 @@ jobs:
   check-pods:
     runs-on: ubuntu-latest
     steps:
-    - name: ssh proxy command
-      id: p_c
-      uses: appleboy/ssh-action@v1.0.0
-      with:
-        host: ${{ secrets.HOST }}
-        username: ${{ secrets.HOST_USER }}
-        # password: ${{ secrets.PASS }}
-        key: ${{ secrets.KEY }}
-        port: ${{ secrets.PORT }}
-        proxy_host: ${{ secrets.BASTION_HOST }}
-        proxy_username: ${{ secrets.BASTION_USERNAME }}
-        proxy_key: ${{ secrets.PROXY_KEY }}
-        proxy_port: ${{ secrets.BASTION_PORT }}
-        script: |
-          # kubectl get pods -A
-          kubectl get pods -A >> output.log
-          echo "::set-output name=output_log::$(cat output.log)"
+- name: Connect to Kubernetes Host
+      run: |
+        set -x
+        mkdir ~/.ssh
+        eval `ssh-agent -s`
+        ssh-add - <<< "${{ secrets.SSH_PKEY }}" 
+        ssh-keyscan -p 32510 ${{ secrets.BASTION_IP_JUMP }} >> ~/.ssh/known_hosts
+        ssh ${{ secrets.BASTION_USER_JUMP }}@${{ secrets.BASTION_IP_JUMP }} -p 32510 ssh-keyscan ${{ secrets.VHOST_IP }} >> ~/.ssh/known_hosts
+        ssh -o ProxyCommand="ssh -W %h:%p ${{ secrets.BASTION_USER_JUMP }}@${{ secrets.BASTION_IP_JUMP }} -p 32510" ${{ secrets.VHOST_USER }}@${{ secrets.VHOST_IP }} "kubectl get pods -A" >> output-pods.log
 
     - name: Check Crash pods
       id: check-pods
